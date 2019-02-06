@@ -1,5 +1,5 @@
 ---
-title: "Title of Document"
+title: "Homework of Notes 2"
 author:
   affiliation: 'Case Western Reserve University'
   email: 'rxw402@case.edu'
