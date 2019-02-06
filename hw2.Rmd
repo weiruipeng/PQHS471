@@ -1,0 +1,217 @@
+---
+title: "Title of Document"
+author:
+  affiliation: 'Case Western Reserve University'
+  email: 'rxw402@case.edu'
+  name: 'Ruipeng Wei'
+date: '`r format(Sys.Date())`'
+output:
+  html_document:
+    theme: 'united'
+    highlight: 'tango'
+    df_print: 'paged'
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: 'hide'
+params:
+    nameOfScript: 'hw2.Rmd'
+    nameOfProject: 'TemplateScript'
+---
+
+#library package
+```{r}
+set.seed(471)
+library(MASS)
+library(stats)
+library(ggplot2)
+library(class)
+library(caret)
+library(ROCR)
+```
+
+#check dataset
+```{r}
+sum(!complete.cases(Boston))
+```
+
+It tell us the data set does not missing any data. 
+
+```{r}
+pander::pander(summary(Boston))
+```
+
+#generate the outcome
+```{r}
+m <- median(Boston$crim)
+Boston$crim_cat <- Boston$crim
+Boston[which(Boston$crim_cat>m),]$crim_cat <- "above"
+Boston[which(Boston$crim_cat!="above"),]$crim_cat <- "below"
+Boston <- Boston[ , -which(names(Boston) %in% c("chas","dis","nox"))]
+```
+
+Considering the the degree of freedom, I remove the `chas` which means Charles River dummy variable (1 if tract bounds river; 0 otherwise), `nox` which means  nitric oxides concentration (parts per 10 million) and `dis` which means weighted distances to five Boston employment centers. There are the three variables that I thin it is not relative with the outcome. 
+
+#codebook
+`crim` - per capital crime rate by town
+`zn` - proportion of residential land zoned for lots over 25,000 sq.ft.
+`indus` - proportion of non-retail business acres per town.
+`rm` - average number of rooms per dwelling
+`age` - proportion of owner-occupied units built prior to 1940
+`dis` - weighted distances to five Boston employment centers
+`rad` - index of accessibility to radial highways
+`tax` - full-value property-tax rate per $10,000
+`ptratio` - pupil-teacher ratio by town
+`black` - 1000(Bk - 0.63)^2 where Bk is the proportion of blacks by town
+`lstat` - % lower status of the population
+`medv` - Median value of owner-occupied homes in $1000's
+`crim_cat` - the per capital crime rate by town is above median or below median
+
+#exploratory of the data
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = zn))+
+  geom_boxplot()+
+        labs(x = "crim vs zn")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = indus))+
+  geom_boxplot()+
+        labs(x = "crim vs indus")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = rm))+
+  geom_boxplot()+
+        labs(x = "crim vs rm")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = age))+
+  geom_boxplot()+
+        labs(x = "crim vs age")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = rad))+
+  geom_boxplot()+
+        labs(x = "crim vs rad")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = tax))+
+  geom_boxplot()+
+        labs(x = "crim vs tax")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = ptratio))+
+  geom_boxplot()+
+        labs(x = "crim vs ptratio")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = black))+
+  geom_boxplot()+
+        labs(x = "crim vs black")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = lstat))+
+  geom_boxplot()+
+        labs(x = "crim vs lstat")
+```
+
+```{r}
+ggplot(Boston,aes(x= crim_cat, y = medv))+
+  geom_boxplot()+
+        labs(x = "crim vs medv")
+```
+
+#seperate data into training set and testing set 
+```{r}
+train_ind <- sample(seq_len(nrow(Boston)), size = floor(0.8 * nrow(Boston)))
+train <- Boston[train_ind, ]
+test <- Boston[-train_ind, ]
+```
+
+
+#logistic regression model
+##build logistic regression model in training dataset
+```{r}
+gfit <- glm(as.factor(crim_cat) ~ zn + indus + rm + age +
+            rad + tax + ptratio + black + lstat + medv, data = train,
+            family="binomial"(link="logit"))
+
+gfit$rule.5 <- ifelse(gfit$fitted.values >= 0.5,"Predict Above", "Predict Blove")
+table(gfit$rule.5,gfit$y)
+
+prob <- predict(gfit, train, type="response")
+pred <- prediction(prob, train$crim_cat)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure="auc")
+auc <- round(auc@y.values[[1]],3)
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+tpr=unlist(perf@y.values),
+model="GLM")
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+geom_ribbon(alpha=0.2, fill = "blue") +
+geom_line(aes(y=tpr), col = "blue") +
+geom_abline(intercept = 0, slope = 1, lty = "dashed") +
+labs(title = paste0("ROC Curve w/ AUC=", auc)) +
+theme_bw()
+```
+
+The area of the ROC curve is above 90%, looks pretty high. 
+Based on the table, the recall is about 91%, specificity is about 81%, precision is about 83%, the accuracy is about 86%.
+
+##apply the model in test data.
+```{r}
+predict1 <- predict(gfit, newdata = test)
+predict1 <- as.numeric(predict1)
+predict1 <- exp(predict1)/(1+exp(predict1))
+predict1 <- as.data.frame(predict1)
+predict1 <- cbind.data.frame(predict1,test$crim_cat)
+colnames(predict1) <- c("predict","real")
+predict1[which(predict1$predict<0.5),]$predict <- "Above"
+predict1[which(predict1$predict!="Above"),]$predict <- "Below"
+table(predict1$predict,predict1$real)
+```
+
+The accuracy is about 89%.Recall is 84%, specificity is 96% and precision is about 96%.
+
+#LDA
+##build the LDA model
+```{r}
+lda1 = lda(as.factor(crim_cat) ~ zn + indus + rm + age +
+            rad + tax + ptratio + black + lstat + medv, data = train)
+
+table(train$crim_cat, predict(lda1)$class)
+```
+
+The accuracy is about 86%, recall is about 91%, the specificity is about 82%, the precision is about 80%.
+
+##apply LDA model in test dataset
+```{r}
+predict2 <- predict(lda1, newdata = test)
+table(test$crim_cat,predict2$class)
+```
+
+The accuracy is about 86%, recall is about 93%, specificity is about 79%, and the precision is about 78%.
+
+#KNN
+##build KNN model on train data
+
+```{r}
+knn.pred=knn(as.matrix(train[,2:11]), as.matrix(test[,2:11]), cl=as.factor(train$crim_cat), k=2,prob = T)
+table(test$crim_cat, knn.pred)
+```
+
+The accuracy of knn model is about 93%, the recall is about 93%, the specificity is about 93%, the precision is about 95%. 
+
+#conclusion
+Based on the accuracy of the three methods, KNN has the highest accuracy, then is the logistic regression, the worst one is LDA. 
+From this result, I can assume that the decision boundary is very non-linear. Because logistic regression has a linear decision boundary, while LDA has a even more restrict boundary. Thus, these two model has a worse performance than KNN. 
+

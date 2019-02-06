@@ -1,0 +1,362 @@
+---
+title: "Title of Document"
+author:
+  affiliation: 'Case Western Reserve University'
+  email: 'rxw402@case.edu'
+  name: 'Ruipeng Wei'
+date: '`r format(Sys.Date())`'
+output:
+  html_document:
+    theme: 'united'
+    highlight: 'tango'
+    df_print: 'paged'
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: 'hide'
+params:
+    nameOfScript: 't4-analysisPathways.Rmd'
+    nameOfProject: 'TemplateScript'
+---
+
+#Load package
+```{r setup, include=FALSE}
+library(ISLR)
+library(titanic)
+library(car)
+library(caret)
+library(ROCR)
+library(ggplot2)
+library(simputation)
+library(knitr)
+library(ggthemes)
+library(gridExtra)
+library(scales)
+library(dplyr)
+```
+
+#1 - ex.9 in LSLR charpeter3
+##(a)
+```{r, echo=FALSE}
+scatterplotMatrix(Auto)
+```
+
+##(b)
+```{r}
+cor(Auto[ , -which(names(Auto) %in% "name")])
+```
+
+##(c)
+```{r}
+summary(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto))
+```
+
+According to the p value in linear regression result, displacement, weight, year and origin have statistically significant effect on the outcome or response, mpg. While the cylinder and acceleration have no significant effect on mpg. 
+
+##(d)
+```{r}
+plot(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto))
+```
+
+Based on the residuals plot, the residuals are around 0, and do not have several problems. 
+
+According to the normal QQplot, the linear regression model fit the data well except for several data points like point 32, point 323 and etc. 
+
+Point 327 and 394 are outlines but point 14 is the leverage point in this linear model. 
+
+##(e)
+```{r}
+fit <- lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto)
+fit1 <- lm(mpg ~ cylinders * displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto)
+anova(fit, fit1)
+
+fit2 <- lm(mpg ~ cylinders + displacement * horsepower +
+           weight + acceleration + year + origin, data = Auto)
+anova(fit, fit2)
+
+fit3 <- lm(mpg ~ cylinders + displacement + horsepower *
+           weight + acceleration + year + origin, data = Auto)
+anova(fit, fit3)
+
+fit4 <- lm(mpg ~ cylinders + displacement + horsepower +
+           weight * acceleration + year + origin, data = Auto)
+anova(fit, fit4)
+
+fit5 <- lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration * year + origin, data = Auto)
+anova(fit, fit5)
+
+fit6 <- lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year * origin, data = Auto)
+anova(fit, fit6)
+```
+
+Any interaction between the two variables in Auto data set except "mpg" and "name" has significant effect on the linear regression model. 
+
+##(f)
+```{r}
+car::boxCox(Auto$mpg ~ Auto$cylinders + Auto$displacement + Auto$horsepower + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+powerTransform(Auto$mpg ~ Auto$cylinders + Auto$displacement + Auto$horsepower + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+```
+
+The Box-Cox plot peaks at the value lambda = -0.36, which is pretty close to lambda = -0.5. 
+
+```{r}
+summary(lm(1/sqrt(mpg) ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto))
+par(mfrow=c(1,2))
+plot(lm(1/sqrt(mpg) ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 1)
+plot(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 1)
+plot(lm(1/sqrt(mpg) ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 2)
+plot(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 2)
+plot(lm(1/sqrt(mpg) ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 3)
+plot(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 3)
+plot(lm(1/sqrt(mpg) ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 4)
+plot(lm(mpg ~ cylinders + displacement + horsepower +
+           weight + acceleration + year + origin, data = Auto),which = 4)
+```
+
+After transformation, the residuals have decreased obviously. 
+
+
+#2 -Final prediction model
+
+#testing dataset
+What I learnt by seeing others' solution.
+
+1. In real data set, there are a lot of missing data. Thus, before doing analysis, it is better to do an exploratory data analysis and see the pattern of the data set. Then, we could decide to remove some or impute. Also, there are some duplicate observations should be moved. 
+
+2. According to Couronné et.al BMC bioinformatics, it seems that in the classification question, random forest model is a little better than logistic regression in accuracy. But before doing random forest classification, features should be coded in factors format. 
+
+3. Combining two variables into one could reduce the flexibility of the model.
+
+##Data dimision and data structure
+```{r}
+training <- titanic_train
+testing <- titanic_test
+titanic_all <- bind_rows(training,testing)
+dim(training)
+dim(testing)
+dim(titanic_all)
+
+titanic_all$Survived <- as.factor(titanic_all$Survived)
+titanic_all$Pclass <- as.factor(titanic_all$Pclass)
+titanic_all$Sex <- as.factor(titanic_all$Sex)
+titanic_all$Cabin <- as.factor(titanic_all$Cabin)
+titanic_all$Embarked <- as.factor(titanic_all$Embarked)
+```
+
+##Clean data
+```{r}
+ifelse(length(unique(titanic_all[,1])) == nrow(titanic_all),"No duplicates","Duplicates detected!")
+```
+
+##Impute missing data
+```{r}
+sum(is.na(titanic_all))
+
+# replace missing values with NA across all features
+for (i in 1:ncol(titanic_all)){
+  titanic_all[,i][ titanic_all[,i]== ""] <- NA
+}
+
+# define a function to get number of NAs in each feature
+getNA <- function(dt,NumCol){
+       varsNames <- names(dt)
+        NAs <- 0
+
+        for (i in 1:NumCol){
+          NAs <- c(NAs, sum(is.na(dt[,i])))
+        }
+
+        NAs <- NAs[-1]
+        names(NAs)<- varsNames # make a vector of variable name and count of NAs
+
+        NAs <- NAs[NAs > 0]
+        NAs 
+}
+
+getNA(titanic_all,ncol(titanic_all))
+```
+
+`Survived` is the outcome in the training data, thus I will exclude this variable in the imputing step.
+`Cabin` missed a lot of data, over 5/7, so it cannot be a good predictor in the model. `Age` and `Embarked` could be imputed by other variables. 
+
+###Imputing Embarkation missing values
+Based on the common sense, `Fare`, `Class` and `Embarked` have some relationship. Also, through plot and analysis, we could assume the missing data in `Embarked`.
+
+```{r}
+titanic_all[is.na(titanic_all$Embarked)>0,]
+FareClassComp <- titanic_all %>% filter(!is.na(Embarked))
+
+FareClassComp %>% 
+        ggplot(aes(x = Embarked, y = Fare, fill = Pclass))+
+        geom_boxplot()+
+        geom_hline(aes(yintercept = 80),
+                   colour = "red", linetype = "dashed", lwd = 2)+
+        scale_y_continuous(labels = dollar_format())+
+        theme_few()
+```
+
+From the box plot we could see that `Embarked(C)` has the highest median `Fare` - 80 dollars which is the same with the two passenger who had missing `Embarked` value. Thus, I have more confidence to say that both passengers with missing embarkation values had embarked off the same port.
+
+```{r}
+titanic_all[is.na(titanic_all$Fare)>0,]
+titanic_all$Embarked[is.na(titanic_all$Embarked)] <- "C"
+```
+
+Now we only have one missing value in `Fare`. From the above box plot, we could use the median `Fare` value of `Embarked(S)` to predict, since the passenger is embarked off at S. 
+
+```{r}
+titanic_all$Fare[titanic_all$PassengerId == 1044] <-  median(titanic_all$Fare[titanic_all$Pclass == 3 & titanic_all$Embarked == "S"], na.rm = T)
+```
+
+###Imputing age
+
+Normally, elder people have much more reasons like healthy problem and money to buy an expensive ticket and live in a better class or cabin. Thus, I would like to use `Fare` to impute `Age`.
+
+```{r}
+set.seed(471)
+titanic_all <- titanic_all %>%
+  impute_rlm(Age ~ Fare)
+```
+
+##Creat new feature
+
+I learnt from others that the combination of two variables could reduce the flexibility of the model. Thus I will generate the new feature - family size (`Famsize`) by `SibSp` and `Parch`.
+
+```{r}
+titanic_all$Famsize <- titanic_all$SibSp + titanic_all$Parch + 1
+```
+
+##Exploratory of the data analysis
+
+Codebook of the variables
+`PassengerId` Passenger ID
+`Survived` Passenger Survival Indicator
+`Pclass` Passenger Class
+`Name` Name
+`Sex` Sex
+`Age` Age
+`SibSp` Number of Siblings/Spouses Aboard
+`Parch` Number of Parents/Children Aboard
+`Ticket` Ticket Number
+`Fare` Passenger Fare
+`Cabin` Cabin
+`Embarked` Port of Embarkation
+`Famsize` Family Size of Passenger
+
+Separate data set into training and testing data sets. 
+```{r}
+train <- titanic_all[!is.na(titanic_all$Survived),]
+test <- titanic_all[is.na(titanic_all$Survived),]
+```
+
+The histogram of training data set.
+```{r}
+train %>% 
+ggplot(aes(x=Survived, fill = Survived))+
+        geom_histogram(stat = "count")+
+        #labs(x = "Survival in the Titanic tragedy")+
+        geom_label(stat='count',aes(label=..count..))+
+        labs(fill = "Survival (0 = died, 1 = survived)")
+```
+
+```{r}
+ggplot(train,aes(x=Survived, fill=Pclass))+
+  geom_histogram(stat = "count")+
+        labs(x = "Survival vs Class")
+```
+
+```{r}
+ggplot(train,aes(x=Survived, fill=Sex))+
+  geom_histogram(stat = "count")+
+        labs(x = "Survival vs Sex")
+```
+
+```{r}
+ggplot(train,aes(x= Survived, y = Age))+
+  geom_boxplot()+
+        labs(x = "Survival vs Age Stage")
+```
+
+```{r}
+ggplot(train,aes(x=Survived, fill=Embarked))+
+  geom_histogram(stat = "count")+
+        labs(x = "Survival vs Embarkment Port")
+```
+
+```{r}
+ggplot(train,aes(x= Survived, y = Fare))+
+  geom_boxplot()+
+        labs(x = "Survival vs Fare")
+```
+
+```{r}
+ggplot(train,aes(x= Survived, y = Famsize))+
+  geom_boxplot()+
+        labs(x = "Survival vs Family Size")
+```
+
+```{r}
+ggplot(train, aes(x = Famsize, fill = Survived)) +
+        geom_bar(stat='count', position='dodge') +
+        scale_x_continuous(breaks=c(1:11)) +
+        labs(x = 'Survival vs Family Size')
+```
+
+
+##Predicting survival in testing data
+###Build model on training data set. 
+```{r}
+gfit <- glm(Survived ~ Pclass + Sex + Age + Famsize +
+            Fare + Embarked, data = train,
+            family="binomial"(link="logit"))
+
+gfit$rule.5 <- ifelse(gfit$fitted.values >= 0.5,"Predict Alive", "Predict Died")
+table(gfit$rule.5,gfit$y)
+
+prob <- predict(gfit, train, type="response")
+pred <- prediction(prob, train$Survived)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+auc <- performance(pred, measure="auc")
+auc <- round(auc@y.values[[1]],3)
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+tpr=unlist(perf@y.values),
+model="GLM")
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+geom_ribbon(alpha=0.2, fill = "blue") +
+geom_line(aes(y=tpr), col = "blue") +
+geom_abline(intercept = 0, slope = 1, lty = "dashed") +
+labs(title = paste0("ROC Curve w/ AUC=", auc)) +
+theme_bw()
+```
+
+The area of the ROC curve is about 85%, much better than guess. The accuracy is about 83%, precision is about 85%, recall is about 70%, specificity is about 92%.
+
+Thus, I will use this model to predict the survival of testing data. 
+
+```{r}
+Survival <- predict(gfit, newdata = test)
+Survival <- as.numeric(Survival)
+Survival_porb <- exp(Survival)/(1+exp(Survival))
+Survival_test <- cbind(test$PassengerId,Survival_porb)
+colnames(Survival_test) <- c("PassengerID","Survived")
+Survival_test[which(Survival_test[,2]<0.5),][,2] <- 0
+Survival_test[which(Survival_test[,2]>=0.5),][,2] <- 1
+write.table(Survival_test,"Prediction_of_test_data_survival.txt", quote = F, sep ="\t", col.names = T, row.names = F)
+```
+
