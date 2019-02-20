@@ -17,7 +17,7 @@ output:
       smooth_scroll: true
     code_folding: 'hide'
 params:
-    nameOfScript: 't4-analysisPathways.Rmd'
+    nameOfScript: 'hw1.Rmd'
     nameOfProject: 'TemplateScript'
 ---
 
@@ -35,9 +35,103 @@ library(ggthemes)
 library(gridExtra)
 library(scales)
 library(dplyr)
+library(ggsignif)
+library(ggplot2)
+library(ggbeeswarm)
 ```
 
-#1 - ex.9 in LSLR charpeter3
+#1 - ex.1 in LSLR charpter2
+##1
+(a) 
+Since the number of observations(n) is extremely large and the number of predictors(p) is relative small, I prefer a flexible method. Because n/p >> 20, it will not have a serious problem of the degree of freedom. 
+
+(b)
+Since the number of observations(n) is small and the number of predictors(p) is extremely large, I prefer a inflexible method. Because n/p << 20, it will cause a serious problem of the degree of freedom.
+
+(c)
+I do not think the non-linear relationship between the predictors and response will effect on the flexibility of the model. But non-linear model or method may have relatively high flexibility compared with linear model like KNN vs. linear regression model. 
+
+(d)
+Large variance term may lead to a flexible model in order to reduce the MSE and improve prediction.
+
+##3
+
+```{r pressure, echo=FALSE, fig.cap="A caption", out.width = '100%'}
+knitr::include_graphics("hw1.JPG")
+```
+
+Training MSE line decreases because when flexibility increasing, the model fits the training data better and better. At the same time, test MSE will decrease first and then increase. Because when method becomes complex, its performance in test data will increase. Once the method is overfitting the training data, the performance in test data set will decrease and the test MSE increases. 
+Var is the irreducible error, thus it keeps constant in the plot.
+The bias curve decreases monotonically because when the method becomes more complex it could more close to the real life problem which means the bias will decrease. 
+The variance increases monotonically, because when the model fits the training dataset really well, when change a dataset, the performance will decrease which will cause the variance increase. 
+
+##8
+(a)
+```{r}
+college <- read.csv("College.csv")
+```
+
+(b)
+```{r}
+rownames (college )=college [,1] #name the row of college
+fix (college )
+college =college [,-1] #delete the last column of the college data set
+fix (college )
+```
+
+(c)
+```{r}
+summary(college)
+pairs(college[,1:10])
+plot(Outstate ~ Private, data = college)
+
+Elite =rep ("No",nrow(college ))
+Elite [college$Top10perc >50]=" Yes"
+Elite =as.factor (Elite)
+college =data.frame(college ,Elite)
+summary(college$Elite)
+plot(Outstate ~ Elite, data = college)
+
+par(mfrow=c(2,2))
+hist(college$Top10perc, breaks = 10, xlab = "Top10perc", main="histogram of Top10perc with break=10")
+hist(college$Top10perc, breaks = 5, xlab = "Top10perc",
+     main="histogram of Top10perc with break=5")
+hist(college$Top25perc, breaks = 10, xlab = "Top25perc", main="histogram of Top25perc with break=10")
+hist(college$Top25perc, breaks = 5, xlab = "Top25perc", main="histogram of Top25perc with break=5")
+```
+
+(d)
+```{r}
+percentage <- college$Accept/college$Apps
+percentage <- cbind.data.frame(percentage,college$Private)
+pvalue <- t.test(percentage[which(percentage$`college$Private`=="Yes"),][,1],percentage[which(percentage$`college$Private`=="No"),][,1])$p.value
+pvalue <- round(pvalue,digits = 4)
+ggplot(data=college,aes(x=Private, y=Accept/Apps))+
+  geom_boxplot(col="black",alpha=0.8, fill=c("yellow","purple")) +
+  geom_quasirandom(dodge.width=0.9,alpha=.4) +
+  theme_bw()+
+  geom_signif(comparisons = list(c("No","Yes")), 
+              map_signif_level=TRUE,test = "t.test") +
+  labs(y="percentage of acceptance") +
+  scale_x_discrete(    breaks=c("No", "Yes"),
+                       labels=c("Public University", "Private University")) +
+  annotate(geom="text",x=1.5, y=1.1, label=paste("p.value (student t test):",pvalue),
+           color="black",size=3) +
+  labs(title = "Boxplot of Accept Percentage",
+        x = "",
+       y = "Percentage of Acceptance") +
+  theme(axis.text.x=element_text(size=13),
+        axis.text.y=element_text(size=13),
+        axis.title.x=element_text(size=15),
+        axis.title.y=element_text(size=15),
+        legend.text= element_text(size=13),
+        legend.title = element_text(size=10),
+        title = element_text(size=20))
+```
+
+We could tell from the plot that there is statistical significant difference of the acceptance of application between the Public University and Private University. It is interesting that the mean acceptance of Private University is higher than the public, there are some Private University has extremely low acceptance. Also, there are much more student apply for Private University than the Public University. 
+
+#2 - ex.9 in LSLR charpter3
 ##(a)
 ```{r, echo=FALSE}
 scatterplotMatrix(Auto)
@@ -132,7 +226,7 @@ plot(lm(mpg ~ cylinders + displacement + horsepower +
 After transformation, the residuals have decreased obviously. 
 
 
-#2 -Final prediction model
+#3 -Final prediction model
 
 #testing dataset
 What I learnt by seeing others' solution.
