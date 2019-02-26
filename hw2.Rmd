@@ -1,5 +1,5 @@
 ---
-title: "Homework of Notes 3"
+title: "Homework 2"
 author:
   affiliation: 'Case Western Reserve University'
   email: 'rxw402@case.edu'
@@ -22,7 +22,7 @@ params:
 ---
 
 #library package
-```{r}
+```{r warning = F, message=F}
 set.seed(471)
 library(MASS)
 library(stats)
@@ -30,21 +30,29 @@ library(ggplot2)
 library(class)
 library(caret)
 library(ROCR)
+library(boot)
+library(glmnet)
+library(pls)
+library(leaps)
+library(rpart)
+library(tree)
+library(splines)
 ```
 
-#check dataset
-```{r}
+#Char4 - ex.13
+##check dataset
+```{r warning = F}
 sum(!complete.cases(Boston))
 ```
 
 It tell us the data set does not missing any data. 
 
-```{r}
+```{r warning = F}
 pander::pander(summary(Boston))
 ```
 
-#generate the outcome
-```{r}
+##generate the outcome
+```{r warning = F}
 m <- median(Boston$crim)
 Boston$crim_cat <- Boston$crim
 Boston[which(Boston$crim_cat>m),]$crim_cat <- "above"
@@ -54,7 +62,7 @@ Boston <- Boston[ , -which(names(Boston) %in% c("chas","dis","nox"))]
 
 Considering the the degree of freedom, I remove the `chas` which means Charles River dummy variable (1 if tract bounds river; 0 otherwise), `nox` which means  nitric oxides concentration (parts per 10 million) and `dis` which means weighted distances to five Boston employment centers. There are the three variables that I thin it is not relative with the outcome. 
 
-#codebook
+##codebook
 `crim` - per capital crime rate by town
 `zn` - proportion of residential land zoned for lots over 25,000 sq.ft.
 `indus` - proportion of non-retail business acres per town.
@@ -69,78 +77,78 @@ Considering the the degree of freedom, I remove the `chas` which means Charles R
 `medv` - Median value of owner-occupied homes in $1000's
 `crim_cat` - the per capital crime rate by town is above median or below median
 
-#exploratory of the data
-```{r}
+##exploratory of the data
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = zn))+
   geom_boxplot()+
         labs(x = "crim vs zn")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = indus))+
   geom_boxplot()+
         labs(x = "crim vs indus")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = rm))+
   geom_boxplot()+
         labs(x = "crim vs rm")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = age))+
   geom_boxplot()+
         labs(x = "crim vs age")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = rad))+
   geom_boxplot()+
         labs(x = "crim vs rad")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = tax))+
   geom_boxplot()+
         labs(x = "crim vs tax")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = ptratio))+
   geom_boxplot()+
         labs(x = "crim vs ptratio")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = black))+
   geom_boxplot()+
         labs(x = "crim vs black")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = lstat))+
   geom_boxplot()+
         labs(x = "crim vs lstat")
 ```
 
-```{r}
+```{r warning = F}
 ggplot(Boston,aes(x= crim_cat, y = medv))+
   geom_boxplot()+
         labs(x = "crim vs medv")
 ```
 
-#seperate data into training set and testing set 
-```{r}
+##seperate data into training set and testing set 
+```{r warning = F}
 train_ind <- sample(seq_len(nrow(Boston)), size = floor(0.8 * nrow(Boston)))
 train <- Boston[train_ind, ]
 test <- Boston[-train_ind, ]
 ```
 
 
-#logistic regression model
-##build logistic regression model in training dataset
-```{r}
+##logistic regression model
+###build logistic regression model in training dataset
+```{r warning = F}
 gfit <- glm(as.factor(crim_cat) ~ zn + indus + rm + age +
             rad + tax + ptratio + black + lstat + medv, data = train,
             family="binomial"(link="logit"))
@@ -167,8 +175,8 @@ theme_bw()
 The area of the ROC curve is above 90%, looks pretty high. 
 Based on the table, the recall is about 91%, specificity is about 81%, precision is about 83%, the accuracy is about 86%.
 
-##apply the model in test data.
-```{r}
+###apply the model in test data.
+```{r warning = F}
 predict1 <- predict(gfit, newdata = test)
 predict1 <- as.numeric(predict1)
 predict1 <- exp(predict1)/(1+exp(predict1))
@@ -182,9 +190,9 @@ table(predict1$predict,predict1$real)
 
 The accuracy is about 89%.Recall is 84%, specificity is 96% and precision is about 96%.
 
-#LDA
-##build the LDA model
-```{r}
+##LDA
+###build the LDA model
+```{r warning = F}
 lda1 = lda(as.factor(crim_cat) ~ zn + indus + rm + age +
             rad + tax + ptratio + black + lstat + medv, data = train)
 
@@ -193,25 +201,441 @@ table(train$crim_cat, predict(lda1)$class)
 
 The accuracy is about 86%, recall is about 91%, the specificity is about 82%, the precision is about 80%.
 
-##apply LDA model in test dataset
-```{r}
+###apply LDA model in test dataset
+```{r warning = F}
 predict2 <- predict(lda1, newdata = test)
 table(test$crim_cat,predict2$class)
 ```
 
 The accuracy is about 86%, recall is about 93%, specificity is about 79%, and the precision is about 78%.
 
-#KNN
-##build KNN model on train data
+##KNN
+###build KNN model on train data
 
-```{r}
+```{r warning = F}
 knn.pred=knn(as.matrix(train[,2:11]), as.matrix(test[,2:11]), cl=as.factor(train$crim_cat), k=2,prob = T)
 table(test$crim_cat, knn.pred)
 ```
 
 The accuracy of knn model is about 93%, the recall is about 93%, the specificity is about 93%, the precision is about 95%. 
 
-#conclusion
+##Conclusion
 Based on the accuracy of the three methods, KNN has the highest accuracy, then is the logistic regression, the worst one is LDA. 
-From this result, I can assume that the decision boundary is very non-linear. Because logistic regression has a linear decision boundary, while LDA has a even more restrict boundary. Thus, these two model has a worse performance than KNN. 
+From this result, I can assume that the decision boundary is very non-linear based on the chosen data set and predictor. Because logistic regression has a linear decision boundary, while LDA has a even more restrict boundary. Thus, these two model has a worse performance than KNN. 
 
+#Char5 - ex.9
+##(a)
+```{r warning = F}
+mean_medv <- mean(Boston$medv)
+mean_medv
+```
+
+Based on the data set, we can gain a mean value of medv is about 22.5 which could be considered as the estimate value of population mean value.  
+
+##(b)
+```{r warning = F}
+sd_medv1 <- sqrt(sum((Boston$medv-mean_medv)^2)/length(Boston$medv-1))
+sd_medv1
+sd(Boston$medv)
+```
+
+We also could use the standard deviation of medv, 9.19, in the Boston data set to estimate the population standard deviation.
+
+##(c)
+```{r warning = F}
+sd_medv2 <- boot(Boston$medv,sd,R=100)
+sd_medv2
+```
+
+By using bootstrap and repeat it 100 times, the standard deviation of the population is estimated about 9.20.
+
+##(d)
+```{r warning = F}
+mean_medv + sd_medv2$t0 #upper limit
+mean_medv - sd_medv2$t0 #lower limit
+```
+
+Using the one sd rule, we can estimate the 95 confidence interval(CI) is from 31.73 ~ 13.34
+
+##(e)
+```{r warning = F}
+median_medv <- boot(Boston$medv,median,R=100)
+median_medv
+```
+
+Thus the estimate median of the medv in population is about 21.2.
+
+##(f)
+```{r warning = F}
+stdmedian = function(x, index){
+  sqrt(sum((x-median(x))^2)/length(x-1))
+}
+stdmedian(Boston$medv)
+standmedian_medv <- boot(Boston$medv, stdmedian, R=100)
+standmedian_medv
+```
+
+Based on this result, the estimate median standard deviation is about 9.28 which is close but a little larger than the estimate standard deviation. Thus I can state that the data is clustered more at mean than at median. 
+
+##(g)
+```{r warning = F}
+per = function(x,index){
+  quantile(x,probs = 0.1)
+}
+boot(Boston$medv, per,R = 100)
+```
+
+Based on the result of bootstrap, the estimate of 10th percentile is about 12.75.
+
+```{r warning = F}
+stdper = function(x, index){
+  sqrt(sum((x-quantile(x,probs = 0.1))^2)/length(x-1))
+}
+stdper(Boston$medv)
+boot(Boston$medv, stdper, R=100)
+```
+
+The estimate of 10th percentile standard deviation, 13.42 is larger than the estimate of 10th percentile, 12.75. But it is not so much large which means the data is clustered.
+
+#Chr6 - ex.9
+##loading data
+```{r warning = F}
+College <- read.csv("College.csv")
+sum(!complete.cases(College))
+```
+
+##(a)
+```{r warning = F}
+train_ind <- sample(seq_len(nrow(College)), size = floor(0.8 * nrow(College)))
+train <- College[train_ind, ]
+test <- College[-train_ind, ]
+```
+
+##(b)
+```{r warning = F}
+ex9_lm <- lm(Apps ~ ., train[,-1])
+pre_ex9_lm <- predict.lm(ex9_lm,newdata = test[,-1])
+mean((pre_ex9_lm - test$Apps)^2)
+```
+
+The test error is about 1177617.
+
+##(c)
+```{r warning = F}
+x <- model.matrix(Apps ~ ., train[,-1])[,-1]
+y <- train$Apps
+ex9_glmnet <- cv.glmnet(x, y, alpha=0)
+pre_ex9_glmnet <- predict (ex9_glmnet, s = ex9_glmnet$lambda, newx = model.matrix(Apps ~ ., test[,-1])[,-1])
+mean((pre_ex9_glmnet - test$Apps)^2)
+```
+
+The test error of the ridge model after cross validation(CV) is about 6132193.
+
+##(d)
+```{r warning = F}
+ex9_lasso <- cv.glmnet(x, y, alpha=1)
+pre_ex9_lasso <- predict (ex9_lasso, s = ex9_lasso$lambda, newx = model.matrix(Apps ~ ., test[,-1])[,-1])
+mean((pre_ex9_lasso - test$Apps)^2)
+```
+
+The test error of lasso model after CV is 2066551.
+
+##(e)
+```{r warning = F}
+ex9_pcr=pcr(Apps ~ ., data=train[,-1] ,scale=TRUE, validation ="CV")
+pre_ex9_pcr=predict (ex9_pcr ,test, ncomp =ex9_pcr$ncomp)
+mean((pre_ex9_pcr-test$Apps)^2)
+```
+
+The test error of pcr model after CV is 1177617.
+
+##(f)
+```{r warning = F}
+ex9_plsr <- plsr(Apps ~ ., data=train[,-1] ,scale=TRUE, validation ="CV")
+pre_ex9_plsr=predict (ex9_plsr ,test, ncomp =ex9_plsr$ncomp)
+mean((pre_ex9_plsr-test$Apps)^2)
+```
+
+The test error of pcr model after CV is 1177617.
+
+##(g)
+Except estimating by ridge regression model, the other model predicts the application number relative more accurate and seems at the same level. What is interesting that PLS, PCR and linear regression model has the same test error rate. Except the ridge mode, the other methods predict the application number have about 1000 residual.
+
+#Chr6 - ex.11
+
+```{r warning = F}
+train_ind <- sample(seq_len(nrow(Boston)), size = floor(0.8 * nrow(Boston)))
+train <- Boston[train_ind, ]
+test <- Boston[-train_ind, ]
+```
+
+##(a)
+###best subset
+
+```{r warning = F}
+ex11_bestsubset <- regsubsets (crim ~., train)
+summary(ex11_bestsubset)
+predict.regsubsets = function(object, newdata, id, ...) {
+    form = as.formula(object$call[[2]])
+    mat = model.matrix(form, newdata)
+    coefi = coef(object, id = id)
+    mat[, names(coefi)] %*% coefi
+}
+
+pre_ex11_bestsubset <- predict.regsubsets(ex11_bestsubset,test, id = 1)
+mean((pre_ex11_bestsubset-test$crim)^2)
+```
+
+The test error of best subset model is about 15.39. 
+
+###lasso
+```{r warning = F}
+x <- model.matrix(crim ~ ., train)[,-1]
+y <- train$crim
+ex11_lasso <- cv.glmnet(x, y, alpha=1)
+pre_ex11_lasso <- predict (ex11_lasso, s = ex11_lasso$lambda, newx = model.matrix(crim ~ ., test)[,-1])
+mean((pre_ex11_lasso - test$crim)^2)
+```
+
+The test error of the model regulation by lasso is about 17.08.
+
+###ridge
+```{r warning = F}
+x <- model.matrix(crim ~ ., train)[,-1]
+y <- train$crim
+ex11_ridge <- cv.glmnet(x, y, alpha=0)
+pre_ex11_ridge <- predict (ex11_ridge, s = ex11_ridge$lambda, newx = model.matrix(crim ~ ., test)[,-1])
+mean((pre_ex11_ridge - test$crim)^2)
+```
+
+The test error of the model regulated by ridge is about 28.21.
+
+###PCR
+```{r warning = F}
+ex11_pcr=pcr(crim ~ ., data=train ,scale=TRUE, validation ="CV")
+pre_ex11_pcr=predict (ex11_pcr ,test, ncomp =ex11_pcr$ncomp)
+ex11_pcr$ncomp
+mean((pre_ex11_pcr-test$crim)^2)
+```
+
+The test error of pcr model is 14.58.
+
+###conclusion
+```{r warning = F}
+plot(regsubsets (crim ~., train))
+plot(ex11_lasso)
+plot(ex11_ridge)
+plot(ex11_pcr)
+```
+
+According to the test error of all the methods above, except the ridge, are very close. But the flexibility of these method is various. The predictors considered into the model of the best subset are 8, lasso are 11, ridge and pcr are both 13. Because the purpose of the model is predicting the crim rate, I think test error and flexibility are more important than the others.
+
+##(b)
+```{r warning = F}
+nrow(train)/13
+```
+
+According to what I discuss above, I think PCR is better among the other. First, it has a better test error, 14.58 the smallest one. Also, considering the data set size, 13 predictors is acceptable and will not have serious issue to the model.
+
+##(c)
+I choose all the predictors in the data set. First, it will not cause any serious problem to the model. Second, I choose the pcr method which means it will re-coordinate the predictors, so I already give up the interpretation of the model. Thus, the number of the predictors will not be so important. 
+
+#Chr7 - ex9
+##(a)
+```{r warning = F}
+Boston <- MASS::Boston
+ex9_cubic <- lm(nox ~ poly(dis,3),data=Boston)
+ggplot(data = Boston, aes(x = dis, y =nox)) +
+  geom_point() +
+  geom_line(aes(x=Boston$dis, predict(ex9_cubic, Boston)),col="red")
+
+plot(ex9_cubic,1)
+
+mean(abs(ex9_cubic$residuals))
+summary(ex9_cubic)
+```
+
+The average absolute residuals is about 0.046, residual standard error is about 0.062.
+
+##(b)
+```{r warning = F}
+par(mfrow=c(2,5),mar=c(1,1,1,1))
+for(i in 1:10){
+  ex9_cubic <- lm(nox ~ poly(dis,i), data = Boston)
+  ggplot(data = Boston, aes(x = dis, y =nox)) +
+  geom_point() +
+  geom_line(aes(x=Boston$dis, predict(ex9_cubic, Boston)),col="red") +
+  ggtitle(paste("d =", i))
+}
+```
+
+```{r warning = F}
+ex9_poly <- list()
+sum_risidual <- vector()
+for(i in 1:10){
+  ex9_poly[[i]] <- lm(nox ~ poly(dis,i), data = Boston)
+  sum_risidual[i] <- sum((ex9_poly[[i]]$residuals)^2)
+}
+sum_risidual
+```
+
+The sum of residual's square associated from 1 to 10 is above. 
+
+##(c)
+```{r warning = F}
+anova(ex9_poly[[1]],ex9_poly[[2]],ex9_poly[[3]],ex9_poly[[4]],ex9_poly[[5]],ex9_poly[[6]],ex9_poly[[7]],ex9_poly[[8]],ex9_poly[[9]],ex9_poly[[10]])
+```
+
+```{r warning = F}
+summary(ex9_poly[[3]])
+summary(ex9_poly[[4]])
+```
+
+According to the anova result, it seems that the third method which is the cubic model is sufficient to explain the variance and the fourth model is unnecessary. So I think the degree of three is the optimal one. 
+
+##(d)
+```{r warning = F}
+ex9_bs <- lm(Boston$nox ~ bs(Boston$dis, df = 4))
+pred_ex9_bs <- predict(ex9_bs,newdata=data.frame(Boston$dis),se=T)
+ggplot(data = Boston, aes(x = dis, y =nox)) +
+  geom_point() +
+  geom_line(aes(x=Boston$dis, predict(ex9_bs, Boston)),col="red")
+```
+
+I used the default setting in bs which means the 25th, 50th and 75th percentile of the predictor, dis, as the three knots. 
+
+##(e)
+```{r warning = F}
+ex9_bs <- list()
+sum_risidual <- vector()
+par(mfrow=c(2,4),mar=c(1,1,1,1))
+for(i in 3:10){
+  ex9_bs[[i]] <- lm(Boston$nox ~ bs(Boston$dis, df = i))
+  pred_ex9_bs[[i]] <- predict (ex9_bs[[i]],newdata=data.frame(Boston$dis),se=T)
+  ggplot(data = Boston, aes(x = dis, y =nox)) +
+  geom_point() +
+  geom_line(aes(x=Boston$dis, predict(ex9_bs[[i]], Boston)),col="red")
+  sum_risidual[i] <- sum((ex9_bs[[i]]$residuals)^2)
+}
+sum_risidual
+```
+
+The degree of freedom of should be at least 3 which means the knots should be at least 2. And when the degree increase, the RSS decreases because the predictors could explain more variance of the outcome but eats DF at the same time.
+
+##(f)
+```{r warning = F}
+anova(ex9_bs[[3]],ex9_bs[[4]],ex9_bs[[5]],ex9_bs[[6]],ex9_bs[[7]],ex9_bs[[8]],ex9_bs[[9]],ex9_bs[[10]])
+```
+
+```{r warning = F}
+summary(ex9_bs[[5]])
+summary(ex9_bs[[6]])
+```
+
+Since it is another linear method, so I used anova again. According to the anova result, the third one which means the model with degree of 5 is sufficient to explain the variance of the outcome. 
+
+#Chr7 - ex9.
+```{r warning = F}
+OJ <- ISLR::OJ
+sum(!complete.cases(OJ)) #no missing
+str(OJ)
+summary(OJ)
+```
+
+##(a)
+```{r warning = F}
+levels(OJ$Purchase)
+OJ$Purchase = factor(OJ$Purchase, levels(OJ$Purchase), ordered=T)
+train <- OJ[sample(nrow(OJ),800),]
+test <- setdiff(OJ, train)
+```
+
+##(b)
+```{r warning = F}
+tree1 <- rpart(Purchase ~ ., data = train, method= "class")
+summary(tree1)
+pre_tree1 <- table(predict(tree1, type="class"), train$Purchase)
+1-sum(diag(pre_tree1))/sum(pre_tree1)
+```
+
+The error rate of the tree is about 0.16. The terminal nodes are 7.
+
+##(c)
+```{r warning = F}
+names(tree1)
+tree1
+```
+
+The tree first split when Loyal has different value, larger than 0.453 or not. And there are 500+86 observations fall into the classification which Loyal larger than 0.45, and 500 of them is in CH purchase type and 86 of them in MM purchase type.
+
+
+
+##(d)
+```{r warning = F}
+plot(tree1, uniform=T); text(tree1, use.n=T)
+```
+
+It is an unpruned tree which has 7 nodes. Though it uses all the variables to build the tree, the plot of the tree only shows the three variables to be the terminal nodes, PriceDiff, Special and Loyal. The leafs show the classification and the number of observation in this classification. The text on each nodes show criteria.  
+
+##(e)
+```{r warning = F}
+pre <- predict(tree1, newdata = test, type="class") 
+table(test$Purchase, predict(tree1, newdata = test, type="class")) 
+```
+
+Thus the test accuracy is about 0.82, thus the test error rate is about 0.18.
+
+##(f)
+```{r warning = F}
+tree2 <- tree(Purchase ~ ., data = train, method= "class")
+tree3 <- cv.tree(tree2, K=10)
+plot(tree3$size ,tree3$dev ,type="b")
+tree3$dev
+```
+
+From the result, we could tell that when tree size=9, the deviation has the smallest number. Thus, 9 is the optimal choice.
+
+##(g)
+```{r warning = F}
+tree4 <- rpart(Purchase ~ ., data = train, method= "class", control = rpart.control(xval = 10))
+printcp(tree4)
+x <- tree4$cptable[,2] + 1
+y <- tree4$cptable[,4]
+sd <- tree4$cptable[,5]
+plot(y ~ x + 1, xlab="Tree Size", ylab="Cross Validation Error Rate")
+arrows(x, y-sd, x, y+sd, length=0.05, angle=90, code=3)
+```
+
+##(h)
+
+When tree size equal to 7, the tree model has the lowest error rate. But the error rate when tree size = 7 falls in 1 sd of the error rate when tree size = 4. 
+
+##(i)
+```{r warning = F}
+tree5 <- rpart(Purchase ~ ., data = train, method= "class", control = rpart.control(cp = 0.02))
+plot(tree5);text(tree5, use.n=T)
+```
+
+Cross-validation result leads to the pruned tree with tree size is 4. 
+
+##(j)
+```{r warning = F}
+pre_tree5 <- table(predict(tree4, type="class"), train$Purchase)
+
+1-sum(diag(pre_tree1))/sum(pre_tree1)
+1-sum(diag(pre_tree5))/sum(pre_tree5)
+```
+
+Unpruned tree has an error rate about 0.16.
+Pruned tree also has an error rate about 0.16 which is the same with the unpruned one.  
+
+##(k)
+```{r warning = F}
+unprune.pred <- table(predict(tree1, test, type="class"), test$Purchase)
+1-sum(diag(unprune.pred))/sum(unprune.pred)
+prune.pred <- table(predict(tree5, test, type="class"), test$Purchase)
+1-sum(diag(prune.pred))/sum(prune.pred)
+```
+
+The test error rate of unpruned tree model is about 0.17.
+The test error rate of pruned tree model is about 0.18 which is little higher than the pruned one.
