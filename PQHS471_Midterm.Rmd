@@ -1,0 +1,398 @@
+---
+title: "PQHS471_Midterm"
+author: "Ruipeng Wei"
+date: "2/26/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+#library package
+```{r}
+set.seed(471)
+library(caret)
+library(simputation)
+library(knitr)
+library(ggthemes)
+library(gridExtra)
+library(scales)
+library(dplyr)
+library(ggplot2)
+library(psych)
+library(randomForest)
+```
+
+#input data
+```{r}
+test <- read.csv("census_test.csv")
+train <- read.csv("census_train.csv")
+```
+
+```{r}
+#duplicates in training set
+ifelse(length(unique(train[,1])) == nrow(train),"No duplicates","Duplicates detected!")
+```
+
+```{r}
+#missing data in training set
+s <- vector()
+train <- as.matrix(train)
+train[train==" ?"] <- NA
+train <- as.data.frame(train)
+sum(!complete.cases(train))
+for(i in 1:ncol(train)){
+    s[i] <- sum(is.na(train[,i]))
+}
+s <- cbind(colnames(train),s)
+s
+```
+
+We could see that there are 1404 missing data in workclass, 1411 missing data in occupation and 437 missing data in native country. 
+
+```{r}
+#missing data in training set
+table(rowSums(is.na(train)))
+```
+
+According to this result, there are 23171 observations without any missing data, 425 observations have one missing data, 1385 observations have two missing data while 19 observations have 3 missing data. 
+
+Training data has 25000 observations, observations have missing data are 1829 which less than 10% of all training data. If I remove all observations with missing data, it will not arouse serious problem. Thus, I will remove all observations with missing data. 
+
+
+```{r}
+train <- train[complete.cases(train),]
+str(train)
+train$age <- as.numeric(as.character(train$age))
+train$fnlwgt <- as.numeric(as.character(train$fnlwgt))
+train$education.num <- as.integer(as.character(train$education.num))
+train$capital.gain <- as.numeric(as.character(train$capital.gain))
+train$capital.loss <- as.numeric(as.character(train$capital.loss))
+train$hours.per.week <- as.numeric(as.character(train$hours.per.week))
+train$workclass <- factor(train$workclass, levels(train$workclass), ordered=T)
+train$education <- factor(train$education, levels=c(" Preschool"," 1st-4th"," 5th-6th"," 7th-8th"," 9th"," 10th"," 11th"," 12th"," HS-grad"," Some-college"," Assoc-voc"," Assoc-acdm"," Bachelors"," Masters"," Prof-school"," Doctorate"),ordered = T)
+train$marital.status <- factor(train$marital.status,levels(train$marital.status),ordered = T)
+train$occupation <- factor(train$occupation,levels(train$occupation),ordered = T)
+train$relationship <- factor(train$relationship,levels(train$relationship),ordered = T)
+train$race <- factor(train$race,levels(train$race),ordered = T)
+train$sex <- factor(train$sex,levels(train$sex),ordered = T)
+train$native.country <- factor(train$native.country,levels(train$native.country),ordered = T)
+train$income <- factor(train$income,levels(train$income),ordered = T)
+summary(train)
+```
+
+After removing missing data, there are 23717 observations in the training dataset. And the outcome - income - is a binary outcome which contains two levels ">50k" and "<=50k". Thus, logistic regression will be the first trial. 
+Before doing analysis, the distribution of capital gain in a little weird.Thus I will do some data exploratory before build model. 
+
+#explortatory of training data
+```{r}
+train %>% 
+ggplot(aes(x=income, fill = income))+
+        geom_histogram(stat = "count")+
+        geom_label(stat='count',aes(label=..count..))+
+        labs(fill = "Income")
+```
+
+
+```{r}
+pairs.panels(train[c(1,3,5,11,12,13)])  # select columns 1-4
+
+```
+
+The numeric variables do not correlate with each other tightly. 
+
+```{r}
+ggplot(train,aes(x= income, y = age))+
+  geom_boxplot()+
+        labs(x = "income vs age")
+```
+
+It is obvious that people whose income >50k have higher average/median age. 
+
+```{r}
+ggplot(train,aes(x=income, fill=workclass))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. workclass")
+```
+
+In both kind of income, people have workclass in private are the most.
+
+```{r}
+ggplot(train,aes(x= income, y = fnlwgt))+
+  geom_boxplot()+
+        labs(x = "income vs fnlwgt")
+```
+
+The distribution of the the final sampling weight of the two groups are very similar from the box plot. 
+
+```{r}
+ggplot(train,aes(x= education, y = education.num))+
+  geom_boxplot()+
+        labs(x = "education vs education.num")
+```
+
+The education and education.num are highly correlated.When the education.num increase from 1 to 16,  the education are also change from Preschool to Doctorate. Thus, may be only one of the two will be enough to be considered in the prediction model. 
+
+```{r}
+ggplot(train,aes(x=income, fill=marital.status))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. martital.status")
+```
+
+The distribution of the marital status in two group of income are very different. Most people whose income is less than 50K are either divorced, married-civ spouse or never-married. But most people whose income >50K are Married-civ-spouse. 
+
+```{r}
+ggplot(train,aes(x=income, fill=occupation))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. occupation")
+```
+
+The occupations distribution of the two income groups are very different. People whose income are >50K are unlikely to be Handlers-cleaners, Machine-op-inspect and Other-services. 
+
+```{r}
+ggplot(train,aes(x=income, fill=relationship))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. relationship")
+```
+
+People whose income are > 50K have high possibility be husband in relationship. But people whose income are <=50K are more likely to be in various relationship.
+
+```{r}
+ggplot(train,aes(x=income, fill=race))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. race")
+```
+
+Race in Black has more proportion in the income <= 50K group. 
+
+```{r}
+ggplot(train,aes(x=income, fill=sex))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. sex")
+```
+
+Female are less in the income group >50K. 
+
+```{r}
+ggplot(train,aes(x= income, y = capital.gain))+
+  geom_boxplot()+
+        labs(x = "education vs capital.gain")
+```
+
+The distribution of capital.gain in the two income groups are right skewed. And the median of the two are both 0. But people whose income >50K has some outliers fall on about 100000. 
+
+```{r}
+ggplot(train,aes(x= income, y = capital.loss))+
+  geom_boxplot()+
+        labs(x = "education vs capital.loss")
+```
+
+The distribution of capital.loss of the two income groups are also right skewed. But the group <=50K has much more outliters. 
+
+```{r}
+ggplot(train,aes(x= income, y = hours.per.week))+
+  geom_boxplot()+
+        labs(x = "education vs hours.per.week")
+```
+
+The range of the hours.per.week in the two groups are in the same range, but the median and mean of the >50K are larger. 
+
+```{r}
+ggplot(train,aes(x=income, fill=native.country))+
+  geom_histogram(stat = "count")+
+        labs(x = "income vs. native.country")+
+  theme(legend.position="none")
+```
+
+It is hard to tell which country contribute to which group more except for United-States. 
+
+#logistic regression 
+
+```{r}
+log.m1 <- glm(income ~ age + workclass + fnlwgt + education.num + marital.status + occupation + relationship + race + sex + capital.gain + capital.loss + hours.per.week + native.country, data = train, family="binomial")
+
+summary(log.m1)
+
+log.m1$rule.5 <- ifelse(log.m1$fitted.values >= 0.5,"predicted >50K", "predicted <=50K")
+table(log.m1$rule.5,train$income)
+pre_test_log.m1 <- table(log.m1$rule.5,train$income)
+
+#accuracy in train data
+sum(diag(pre_test_log.m1))/sum(pre_test_log.m1)
+```
+
+This is the result when removing education variable and using all the other variables. The accuracy of this model on test data set is about 85.2%.
+
+According to the significance of the variables in the model, workclass and native country do not have any significance, occupation has significance only in several levels. Thus, it is reasonable to remove these three variables. 
+
+
+```{r}
+log.m2 <- glm(income ~ age + fnlwgt + education.num + marital.status + relationship + race + sex + capital.gain + capital.loss + hours.per.week, data = train, family="binomial")
+
+log.m2$rule.5 <- ifelse(log.m2$fitted.values >= 0.5,"predicted >50K", "predicted <=50K")
+table(log.m2$rule.5,train$income)
+pre_test_log.m2 <- table(log.m2$rule.5,train$income)
+summary(log.m2)
+
+#accuracy in train data
+sum(diag(pre_test_log.m2))/sum(pre_test_log.m2)
+```
+
+The accuracy decrease to 84.2% which is acceptable.
+
+All above are logistic regression models, which are very little flexible. Thus, a flexible method, random forest is worth to try. 
+
+#randomForest
+```{r}
+rf1 <- randomForest(income ~ age + workclass + fnlwgt + education.num + marital.status + occupation + relationship + race + sex + capital.gain + capital.loss + hours.per.week + native.country, data = train)
+
+matplot(rf1$err.rate, type='l', xlab='trees', ylab='Error')
+table(train$income,predict(rf1))
+
+pre_test_rf1 <- table(train$income,predict(rf1))
+
+#accuracy in train data
+sum(diag(pre_test_rf1))/sum(pre_test_rf1)
+```
+
+The accuracy of random forest considering all variables are 86.3%, a little higher than logistic regression model. When the number of tree larger than 100, the error become stable. I will use ntree = 500 in the following analysis.  
+
+```{r}
+importance(rf1)
+varImpPlot(rf1)
+```
+
+From the importance shows above, race, sex and native.country have the least importance. Since the randomness of this method, I would like to try several times and take a look at the importance. 
+
+```{r}
+importance.multirun = matrix(,20,13) 
+for(i in 1:20)
+importance.multirun[i,] = randomForest(income ~ age + workclass + fnlwgt + education.num + marital.status + occupation + relationship + race + sex + capital.gain + capital.loss + hours.per.week + native.country, data = train, ntree = 500)$importance
+colnames(importance.multirun) = rownames(rf1$importance)
+par(mar=c(3,5,1,1))
+idx = order(apply(importance.multirun, 2, median)) 
+boxplot(importance.multirun[, idx], horizontal=T, las=1, ylim=c(0,1000))
+```
+
+According to the value of each importance, the ranges of the value are relative small. Race, sex and native country still have the smallest importance. I will try another two model here. I will remove race, sex and native.country for the first one due to the importance. And for the other one, I will remove native.country, workclass and occupation due to the missing value in the both train and test sets. 
+
+##reduce variable with small importance
+```{r}
+rf2 <- randomForest(income ~ age + workclass + fnlwgt + education.num + marital.status + occupation + relationship + capital.gain + capital.loss + hours.per.week, data = train, ntree=500)
+
+matplot(rf2$err.rate, type='l', xlab='trees', ylab='Error')
+table(train$income,predict(rf2))
+
+pre_test_rf2 <- table(train$income,predict(rf2))
+
+#accuracy in train data
+sum(diag(pre_test_rf2))/sum(pre_test_rf2)
+```
+
+The accuracy of the model removing the least important three variables does not change much, it decrease a little from 86.2% to 86.1%.
+
+##reducing the variable with missing value
+```{r}
+rf3 <- randomForest(income ~ age + fnlwgt + education.num + marital.status + relationship + race + sex + capital.gain + capital.loss + hours.per.week, data = train, ntree = 500)
+
+matplot(rf3$err.rate, type='l', xlab='trees', ylab='Error')
+table(train$income,predict(rf3))
+
+pre_test_rf3 <- table(train$income,predict(rf3))
+
+#accuracy in train data
+sum(diag(pre_test_rf3))/sum(pre_test_rf3)
+```
+
+It also decrease a little from 86.2% to 85.8% when removing the three variables contain missing values. I think it is doable to kick of these three variable from the model. Also, remove these variables will provide enough degree of freedom to do cross validation.
+
+In order to improve the performance of the model, I would like to use cross validation to choose a proper value of mtry. 
+
+
+#randomForest with cv
+```{r}
+train_rf <- train
+train_rf <- apply(train,2,function(x)gsub('\\s+', '',x))
+train_rf <- as.data.frame(train_rf)
+train_rf$income <- as.character(train_rf$income)
+train_rf$native.country <- as.character(train_rf$native.country)
+train_rf[which(train_rf[,15]==">50K"),][,15] <- "larger_than_50K"
+train_rf[which(train_rf[,15]=="<=50K"),][,15] <- "less_than_50K"
+train_rf$age <- as.numeric(as.character(train_rf$age))
+train_rf$fnlwgt <- as.numeric(as.character(train_rf$fnlwgt))
+train_rf$education.num <- as.numeric(as.character(train_rf$education.num))
+train_rf$capital.gain <- as.numeric(as.character(train_rf$capital.gain))
+train_rf$capital.loss <- as.numeric(as.character(train_rf$capital.loss))
+train_rf$hours.per.week <- as.numeric(as.character(train_rf$hours.per.week))
+
+
+cv <- trainControl(method="repeatedcv", number=10, repeats=8, classProbs=TRUE)
+rf5 <- train(x=train_rf[,c(1,3,5,6,8:13)], y=train_rf$income, trControl=cv,tuneGrid=data.frame(mtry=1:10), method="rf", ntree=500)
+plot(rf5)
+```
+
+According to the plot, when mtry = 1, randomForest has the highest accuracy value. 
+
+```{r}
+rf5
+rf5$finalModel
+```
+
+After cross validation, the accuracy is 85.8%, does not have any improvement. 
+
+#Prediction in test set
+
+Since the accuracy of these models do not have significant difference in training set, I will use the logistic regression and randomForest to predict the test set.
+
+##test dataset
+```{r}
+test$marital.status <- factor(test$marital.status,levels(test$marital.status),ordered = T)
+test$occupation <- factor(test$occupation,levels(test$occupation),ordered = T)
+test$relationship <- factor(test$relationship,levels(test$relationship),ordered = T)
+test$race <- factor(test$race,levels(test$race),ordered = T)
+test$sex <- factor(test$sex,levels(test$sex),ordered = T)
+test$native.country <- factor(test$native.country,levels(test$native.country),ordered = T)
+test$income <- factor(test$income,levels(test$income),ordered = T)
+```
+
+##using logistic regression 
+
+```{r}
+pre_test_rf2 <- predict(log.m2,newdata = test[,c(1,3,5,6,8:13)])
+pre_test_rf2 <- as.numeric(pre_test_rf2)
+pre_test_rf2 <- exp(pre_test_rf2)/(1+exp(pre_test_rf2))
+pre_test_rf2 <- as.data.frame(pre_test_rf2)
+pre_test_rf2 <- cbind.data.frame(pre_test_rf2,test$income)
+colnames(pre_test_rf2) <- c("predict","real")
+pre_test_rf2[which(pre_test_rf2$predict<0.5),]$predict <- "<=50K"
+pre_test_rf2[which(pre_test_rf2$predict!="<=50K"),]$predict <- ">50K"
+pre_test_rf2_table <- table(pre_test_rf2$predict,pre_test_rf2$real)
+
+#accuracy in train data
+sum(diag(pre_test_rf2_table))/sum(pre_test_rf2_table)
+```
+
+The accuracy of the logistic regression model in test set is about 83.6%.
+
+##using randomForest
+```{r}
+test_rf <- test
+test_rf <- apply(test,2,function(x)gsub('\\s+', '',x))
+test_rf <- as.data.frame(test_rf)
+test_rf$income <- as.character(test_rf$income)
+test_rf$native.country <- as.character(test_rf$native.country)
+test_rf$age <- as.numeric(as.character(test_rf$age))
+test_rf$fnlwgt <- as.numeric(as.character(test_rf$fnlwgt))
+test_rf$education.num <- as.numeric(as.character(test_rf$education.num))
+test_rf$capital.gain <- as.numeric(as.character(test_rf$capital.gain))
+test_rf$capital.loss <- as.numeric(as.character(test_rf$capital.loss))
+test_rf$hours.per.week <- as.numeric(as.character(test_rf$hours.per.week))
+```
+
+```{r}
+table(predict(rf5$finalModel, test_rf[,c(1,3,5,6,8:13)]),test$income)
+```
+
+Thus the accuracy of randomForest is about 85.5%, a little higher than the logistic regression model. 
+
+
+
