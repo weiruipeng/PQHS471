@@ -1,0 +1,337 @@
+---
+title: "Homework 3"
+author:
+  affiliation: 'Case Western Reserve University'
+  email: 'rxw402@case.edu'
+  name: 'Ruipeng Wei'
+date: '`r format(Sys.Date())`'
+output:
+  html_document:
+    theme: 'united'
+    highlight: 'tango'
+    df_print: 'paged'
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    code_folding: 'hide'
+params:
+    nameOfScript: 'hw1.Rmd'
+    nameOfProject: 'TemplateScript'
+---
+
+#library package
+```{r setup, include=FALSE}
+set.seed(471)
+library(gbm)
+library(ISLR)
+library(car)
+library(caret)
+library(ggplot2)
+library(randomForest)
+library(MASS)
+library(e1071)
+```
+
+#1. assignment in note 10
+```{r}
+khan <- Khan
+str(khan)
+
+#extract train data
+khan_train <- cbind.data.frame(khan$xtrain,khan$ytrain)
+#rename colname of train data
+for(i in 1:ncol(khan_train)-1){
+  colnames(khan_train)[i] <- paste0("gene",i)
+}
+colnames(khan_train)[i+1] <- "y"
+khan_train$y <- as.character(khan_train$y)
+
+#extract train data
+khan_test <- cbind.data.frame(khan$xtest,khan$ytest)
+#rename colname of test data
+for(i in 1:ncol(khan_test)-1){
+  colnames(khan_test)[i] <- paste0("gene",i)
+}
+colnames(khan_test)[i+1] <- "y"
+khan_test$y <- as.factor(khan_test$y)
+```
+
+##RandomForest
+###using default value
+```{r}
+khan_train$y <- as.factor(khan_train$y)
+rf1 <- randomForest(y ~ ., data = khan_train)
+
+matplot(rf1$err.rate, type='l', xlab='trees', ylab='Error')
+table(khan_train$y,predict(rf1))
+
+pre_train_rf1 <- table(khan_train$y,predict(rf1))
+
+#accuracy in train data
+sum(diag(pre_train_rf1))/sum(pre_train_rf1)
+```
+
+The accuracy of the random forest model with default parameter value is 98.4%. But in order to improve the performance of the random forest model, I will use cross validation to tune the parameter. 
+
+###randomForest with cv
+```{r}
+khan_train$y <- as.numeric(khan_train$y)
+cv <- trainControl(method="repeatedcv", number=10, repeats=8, classProbs=TRUE)
+rf2 <- train(x=khan_train[,c(1:ncol(khan_train)-1)], y=khan_train$y, trControl=cv,tuneGrid=data.frame(mtry=1:50), method="rf", ntree=500)
+plot(rf2)
+```
+
+```{r}
+rf2
+rf2$finalModel
+```
+
+From the plot and the result of above, we could see that when the value of mtry improving, the RMSE decrease. The curve of the cross validation resute shows that when mtry is larger than 40, the RMSE will not decrease dramatically. Thus I will not improve the value of mtry. 
+
+```{r}
+khan_train$y <- as.factor(khan_train$y)
+rf3 <- randomForest(y ~ ., data = khan_train, mtry=50)
+
+matplot(rf3$err.rate, type='l', xlab='trees', ylab='Error')
+table(khan_train$y,predict(rf3))
+
+#train confusion matrix
+pre_train_rf3 <- table(khan_train$y,predict(rf3))
+
+#accuracy in train data
+sum(diag(pre_train_rf3))/sum(pre_train_rf3)
+```
+
+The accuracy become 1. But I think it maybe overfit. So I will see how this perform in the test set.  
+
+##random forest model in test data set
+```{r}
+rf3.pre = predict(rf3, khan_test)
+
+#test set confusion matrix
+table(khan_test$y, rf3.pre) 
+pre_test_rf3 <- table(khan_test$y, rf3.pre)
+#accuracy in test
+sum(diag(pre_test_rf3))/sum(pre_test_rf3)
+```
+
+The accuracy in test jump to 90% when choose mtry = 50. It is not so ideal but acceptable. 
+
+##boosting tree
+```{r}
+bt1 = gbm(y ~ ., data=khan_train, distribution="gaussian", n.trees=500)
+bt1
+#condusion matirx in train
+table(khan_train$y,round(predict(bt1,khan_train,n.trees=500)))
+pre_train_bt1 <- table(khan_train$y,round(predict(bt1,khan_train,n.trees=500)))
+#accuracy in train
+sum(diag(pre_train_bt1))/sum(pre_train_bt1)
+```
+
+The accuracy is 1, so the model maybe overfit because the number of trees are too many. Thus I will tune the n.trees to avoid overfitting.
+
+```{r,eval=F}
+ctr = trainControl(method="cv", number=10) 
+mygrid = expand.grid(n.trees=seq(100, 500, 100), interaction.depth=1:8,
+shrinkage=0.1, n.minobsinnode=10)
+bt2 <- train(y ~ ., khan_train, method='gbm',
+trControl=ctr, tuneGrid=mygrid,
+preProc=c('center','scale'), verbose=F)
+bt2$bestTune
+plot(bt2) 
+```
+
+According to the best tune, n-tree = 100, interaction.depth = 1, keep shrikenage in default value and n.minobsinnode = 10 will be the best. According to the plot, the accuracy in training data could be 1. 
+
+```{r}
+bt3 = gbm(y ~ ., data=khan_train, distribution="gaussian", n.trees=100, interaction.depth = 1, n.minobsinnode = 10)
+bt3
+#condusion matirx in train
+table(khan_test$y,round(predict(bt3,khan_test,n.trees=100)))
+pre_train_bt3 <- table(khan_test$y,round(predict(bt3,khan_test,n.trees=100)))
+#accuracy in train
+sum(diag(pre_train_bt3))/sum(pre_train_bt3)
+```
+
+Using the best tune parameter according to the cross validation, the accuracy of the model in testing set is 80% which is lower than the random forest model.
+
+#2. assignment in note 11 - chr9. ex8
+```{r}
+oj <- OJ
+sum(complete.cases(oj)) == nrow(oj)
+str(oj)
+```
+
+##(a)
+```{r}
+sampleindex = sample(1:nrow(oj), 800)
+oj_train = oj[sampleindex, ] 
+oj_test = oj[-sampleindex, ] 
+```
+
+##(b)
+```{r}
+for(i in 2:ncol(oj)){
+plot(oj[,c(i-1, i)],col=oj$Purchase) 
+}
+```
+
+```{r}
+svmfit1 = svm(Purchase ~ ., data=oj_train, kernel='linear')
+svmfit1
+summary(svmfit1)
+```
+
+This model uses linear kernel with cost=10, and there are 326 support vectors used into seperate the two classes, 162 in one class and 164 in the other. 
+
+##(c)
+```{r}
+#cofusion table in train
+table(oj_train$Purchase, svmfit1$fitted) 
+#accuracy of train 
+pre_train_svm1 <- table(oj_train$Purchase, svmfit1$fitted)
+sum(diag(pre_train_svm1))/sum(pre_train_svm1)
+
+#cofusion table in train
+table(oj_test$Purchase, predict(svmfit1, oj_test)) 
+#accuracy of train 
+pre_test_svm1 <- table(oj_test$Purchase, predict(svmfit1, oj_test)) 
+sum(diag(pre_test_svm1))/sum(pre_test_svm1)
+
+```
+
+The training err rate is 1-0.848 = 0.152. The testing err rate is 1-0.807 = 0.193.
+
+##(d)
+```{r}
+svmfit2 = tune(svm, Purchase ~ ., data=oj_train, kernel='linear',
+ranges = list(cost = 10^(c(-2:1))), tunecontrol = tune.control(nrepeat=5, cross=10))
+
+svmfit2$performances
+svmfit2$best.parameters
+svmfit2$best.model
+```
+
+When cost = 0.1, the performance is the best.
+
+##(e)
+```{r}
+svmfit3 = svm(Purchase ~ ., data=oj_train, kernel='linear',cost=0.1)
+#cofusion table in train
+table(oj_train$Purchase, svmfit3$fitted) 
+#accuracy of train 
+pre_train_svm3 <- table(oj_train$Purchase, svmfit3$fitted)
+sum(diag(pre_train_svm3))/sum(pre_train_svm3)
+
+#cofusion table in test
+table(oj_test$Purchase, predict(svmfit3, oj_test)) 
+#accuracy of train 
+pre_test_svm3 <- table(oj_test$Purchase, predict(svmfit1, oj_test)) 
+sum(diag(pre_test_svm3))/sum(pre_test_svm3)
+
+```
+
+The training err rate is 1-0.851 = 0.149. The testing err rate is 1-0.807 = 0.193.
+
+##(f)
+```{r}
+svmfit4 = svm(Purchase ~ ., data=oj_train, kernel='radial')
+
+#cofusion table in train
+table(oj_train$Purchase, svmfit4$fitted) 
+#accuracy of train 
+pre_train_svm4 <- table(oj_train$Purchase, svmfit4$fitted)
+sum(diag(pre_train_svm4))/sum(pre_train_svm4)
+
+#cofusion table in train
+table(oj_test$Purchase, predict(svmfit4, oj_test)) 
+#accuracy of train 
+pre_test_svm4 <- table(oj_test$Purchase, predict(svmfit4, oj_test)) 
+sum(diag(pre_test_svm4))/sum(pre_test_svm4)
+
+```
+
+The training err rate is 1-0.854 = 0.145. The testing err rate is 1-0.837 = 0.163.
+
+```{r}
+svmfit5 = tune(svm, Purchase ~ ., data=oj_train, kernel='radial',
+ranges = list(cost = 10^(c(-2:1))), tunecontrol = tune.control(nrepeat=5, cross=10))
+
+svmfit5$performances
+svmfit5$best.parameters
+svmfit5$best.model
+```
+
+When cost = 1, the performance is the best.
+
+```{r}
+svmfit6 = svm(Purchase ~ ., data=oj_train, kernel='radial',cost=1)
+#cofusion table in train
+table(oj_train$Purchase, svmfit6$fitted) 
+#accuracy of train 
+pre_train_svm6 <- table(oj_train$Purchase, svmfit6$fitted)
+sum(diag(pre_train_svm6))/sum(pre_train_svm6)
+
+#cofusion table in test
+table(oj_test$Purchase, predict(svmfit6, oj_test)) 
+#accuracy of train 
+pre_test_svm6 <- table(oj_test$Purchase, predict(svmfit6, oj_test)) 
+sum(diag(pre_test_svm6))/sum(pre_test_svm6)
+
+```
+
+The training err rate is 1-0.854 = 0.146. The testing err rate is 1-0.837 = 0.163.
+
+##(g)
+```{r}
+svmfit7 = svm(Purchase ~ ., data=oj_train, kernel='polynomial',degree=2)
+
+#cofusion table in train
+table(oj_train$Purchase, svmfit7$fitted) 
+#accuracy of train 
+pre_train_svm7 <- table(oj_train$Purchase, svmfit7$fitted)
+sum(diag(pre_train_svm7))/sum(pre_train_svm7)
+
+#cofusion table in train
+table(oj_test$Purchase, predict(svmfit7, oj_test)) 
+#accuracy of train 
+pre_test_svm7 <- table(oj_test$Purchase, predict(svmfit7, oj_test)) 
+sum(diag(pre_test_svm7))/sum(pre_test_svm7)
+
+```
+
+The training err rate is 1-0.825 = 0.175. The testing err rate is 1-0.819 = 0.181.
+
+```{r}
+svmfit8 = tune(svm, Purchase ~ ., data=oj_train, kernel='polynomial',degree=2,
+ranges = list(cost = 10^(c(-2:1))), tunecontrol = tune.control(nrepeat=5, cross=10))
+
+svmfit8$performances
+svmfit8$best.parameters
+svmfit8$best.model
+```
+
+When cost = 10, the performance is the best.
+
+```{r}
+svmfit9 = svm(Purchase ~ ., data=oj_train, kernel='polynomial',cost=10,degree=2)
+#cofusion table in train
+table(oj_train$Purchase, svmfit9$fitted) 
+#accuracy of train 
+pre_train_svm9 <- table(oj_train$Purchase, svmfit9$fitted)
+sum(diag(pre_train_svm9))/sum(pre_train_svm9)
+
+#cofusion table in test
+table(oj_test$Purchase, predict(svmfit9, oj_test)) 
+#accuracy of train 
+pre_test_svm9 <- table(oj_test$Purchase, predict(svmfit9, oj_test)) 
+sum(diag(pre_test_svm9))/sum(pre_test_svm9)
+
+```
+
+The training err rate is 1-0.856 = 0.144. The testing err rate is 1-0.848 = 0.152.
+
+##(h)
+The accuracy of the three datasets are very close. And due to the number of variables is large, it hard to tell which method is proper from plot. But from the test set accuracy of the three methods after tuning, the support vector machine with a polynomial kernel is the best with an accuracy 0.85.
