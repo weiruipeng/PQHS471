@@ -1,0 +1,255 @@
+---
+title: "final"
+author: "Ruipeng Wei"
+date: "4/27/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#library package
+```{r}
+library(caret)
+library(e1071)
+library(randomForest)
+library(gbm)
+library(ape)
+```
+
+#read in data
+```{r}
+test <- read.table("testset",header=T)
+train <- read.table("trainset",header=T)
+```
+
+```{r}
+sum(complete.cases(test))==nrow(test)
+sum(complete.cases(train))==nrow(train)
+```
+
+No missing data in the two dataset.
+
+```{r,echo=F}
+str(test)
+str(train)
+```
+
+The 55th column, which colname is V65 is the outcome - bankrupt or not. 
+#supervised learning
+##random forest
+```{r}
+train$V65 <- as.factor(train$V65)
+rf1 <- randomForest(V65 ~ ., data = train)
+
+matplot(rf1$err.rate, type='l', xlab='trees', ylab='Error')
+table(train$V65,predict(rf1))
+
+pre_train_rf1 <- table(train$V65,predict(rf1))
+
+#accuracy in train data
+sum(diag(pre_train_rf1))/sum(pre_train_rf1)
+```
+
+The accuracy in train dataset in random forest model is about 93.56%. And according to the error plot, the error rate becomes stable when the number of trees be about 100. Thus, I will use ntree=100 is the following analysis. 
+
+
+In order to improve the performance of random forest, I will try cross validation to tune the hyperparameter. 
+```{r, warning=F}
+cv <- trainControl(method="repeatedcv", number=10, repeats=5, classProbs=TRUE)
+train$V65 <- as.numeric(as.character(train$V65))
+rf2 <- train(x=train[,c(1:54)], y=train$V65, trControl=cv,tuneGrid=data.frame(mtry=1:10), method="rf", ntree=100)
+plot(rf2)
+```
+
+From the plot, we could know that then mtry=10, the RMSE has the lowest value. 
+
+```{r}
+rf2
+rf2$finalModel
+```
+
+```{r}
+table(train$V65,round(predict(rf2)))
+
+pre_train_rf2 <- table(train$V65,round(predict(rf2)))
+
+#accuracy in train data
+sum(diag(pre_train_rf2))/sum(pre_train_rf2)
+```
+
+The accuracy of the trainin dataset is arriving about 99.90% after improving by cross validation. The accuracy is too good to be true, maybe it is overfitted. Let's see the accuracy in test data. 
+
+```{r}
+table(round(predict(rf2$finalModel, test[,c(1:54)])),test$V65)
+pre_test_rf2 <- table(round(predict(rf2$finalModel,test[,c(1:54)])),test$V65)
+#accuracy in test data
+sum(diag(pre_test_rf2))/sum(pre_test_rf2)
+```
+
+The accuracy of this model in test dataset is about 92.97%. 
+
+##boosting
+```{r}
+bt1 = gbm(V65 ~ ., data=train, distribution="gaussian", n.trees=500)
+bt1
+#condusion matirx in train
+table(train$V65,round(predict(bt1,train,n.trees=500)))
+pre_train_bt1 <- table(train$V65,round(predict(bt1,train,n.trees=500)))
+#accuracy in train
+sum(diag(pre_train_bt1))/sum(pre_train_bt1)
+```
+
+The accuracy of the boosting tree in training dataset is about 95.54%. Let's use cross validation to tune the hyperparameter in boosting. 
+
+```{r}
+ctr = trainControl(method="cv", number=10) 
+mygrid = expand.grid(n.trees=seq(100, 500, 100), interaction.depth=1:6,
+shrinkage=0.1, n.minobsinnode=10)
+bt2 <- train(V65 ~ ., train, method='gbm',
+trControl=ctr, tuneGrid=mygrid,
+preProc=c('center','scale'), verbose=F)
+bt2$bestTune
+plot(bt2) 
+```
+
+Accroding to the cross validation result, the model has the best performance when the interaction.depth = 3, n.trees = 200, and n.minobsinode = 10.
+
+```{r}
+bt3 = gbm(V65 ~ ., data=train, distribution="gaussian", n.trees=200, interaction.depth = 3, n.minobsinnode = 10)
+bt3
+
+#confusion matirx in train
+table(train$V65,round(predict(bt3,train,n.trees=200)))
+pre_train_bt3 <- table(train$V65,round(predict(bt3,train,n.trees=200)))
+#accuracy in train
+sum(diag(pre_train_bt3))/sum(pre_train_bt3)
+```
+
+The accuracy in traning dataset improves to about 96.51% about tuning the hypermeters by cross validation.
+
+```{r}
+#confusion matirx in test
+table(test$V65,round(predict(bt3,test,n.trees=200)))
+pre_test_bt3 <- table(test$V65,round(predict(bt3,test,n.trees=200)))
+#accuracy in test
+sum(diag(pre_test_bt3))/sum(pre_test_bt3)
+```
+
+Using the tuned boosting model, the accuracy in test dataset is about 93.59%.
+
+##SVM
+```{r}
+train$V65 <- as.factor(train$V65)
+sf1 = svm(V65 ~ ., data=train, kernel='linear')
+sf1
+#confusion matirx in train
+table(train$V65, sf1$fitted) 
+pre_train_sf1 <- table(train$V65, sf1$fitted)
+#accuracy in train
+sum(diag(pre_train_sf1)/sum(pre_train_sf1))
+```
+
+The accuracy of SVM in test dataset is about 93.49% using default setting. 
+
+```{r}
+sf2 = tune(svm, V65 ~ ., data=train, kernel='linear',
+ranges = list(cost = 2^(-2:10)),
+tunecontrol = tune.control(nrepeat=5, cross=10))
+plot(sf2, transform.x=log2)
+with(sf2$performances, plot(log2(cost), error, type='b'))
+
+sf2$best.model
+```
+
+From the plot and the cross validation result, we could know that when cost = 64, the model has the smallest error rate.
+
+```{r}
+#confusion matirx in train
+table(train$V65, sf2$best.model$fitted) 
+pre_train_sf2 <- table(train$V65, sf2$best.model$fitted) 
+
+#accuracy in train
+sum(diag(pre_train_sf2)/sum(pre_train_sf2))
+```
+
+The accuracy in training data after cross validation is about 93.67%, only having a little improvement compared with the default setting.
+
+```{r}
+table(test$V65, predict(sf2$best.model, test))
+pre_test_sf2 <- table(test$V65, predict(sf2$best.model, test))
+sum(diag(pre_test_sf2)/sum(pre_test_sf2))
+```
+
+The accuracy in test dataset applied with tuned SVM is about 92.50%.
+
+##summary
+I tried three supervised models and tuned these three based cross validation. Tuned randomForest mode has the best performance in training dataset with an accuracy over 99%. But tuned boosting has the best performance with the accuracy about 93.6%. Thus, random forest may be overfitted in the training dataset. In general, the three tuned models have very similar accuracy in test dataset. 
+
+#unsupervised learning
+##cluster
+```{r}
+all <- rbind(test,train)
+all_std <- scale(all[,1:54])
+all_dist <- dist(all_std)
+```
+
+Combine the two dataset, train and test, into a big datset. 
+
+```{r}
+clust1 = hclust(all_dist)
+plot(clust1, xlab='', main="Complete", horiz=T, labels = all$V65)
+pdf("rplot.pdf",width = 20,height = 100) 
+plot(as.phylo(clust1), cex = 0.6, label.offset = 0.5,label=all$V65)
+dev.off() 
+```
+
+There is no way to see the label clearly, and we cannot tell the cluster result from the plot.
+
+```{r}
+clust2 <-cutree(hclust(all_dist),k=2)
+plot(clust2)
+table(all$V65)
+table(clust2)
+```
+
+In all the 5757 samples, 404 of them are in one group and the other 5352 are in the other group. But according to the cluster result, using complete linkage, 5756 are in one group and the left one in the other group. It is obvious that most would-bankrupt companies are not clustered together. So I think it is not a good way to seperate these samples using clustering. 
+
+##MDS
+```{r}
+mds = cmdscale(all_dist, k=2, add=T, list.=T) ## 2-dim, returning a list because list.=T
+```
+
+```{r}
+toplot <- as.data.frame(mds$points)
+col <- all$V65
+col <- as.character(col)
+col[which(col=="1")] <- "black"
+col[which(col=="0")] <- "red"
+plot(toplot, pch=20,col=col)
+```
+
+From this plot it is hard to tell it seperate the two groups sucessfully or not. I will remove the out lier and than redraw the plot.
+
+```{r}
+hist(toplot$V1)
+summary(toplot$V1)
+hist(toplot$V2)
+summary(toplot$V2)
+boxplot(toplot)
+```
+
+Most V1 are clusterd from -15 to 1, V2 are clustered from -1 to 15. Thus, I will ignore 
+
+```{r}
+toplot1 <- cbind.data.frame(toplot,col)
+toplot1 <- toplot1[which(toplot1$V1<1),]
+toplot1 <- toplot1[which(toplot1$V2>-1),]
+plot(toplot1[,1:2], pch=20,col=col)
+```
+
+After removing the outliers, the MDS plot could seperate the two group, bankrupt or not, in general.
+
+In general, MDS method is much better than cluster, but both of the unsupervised methods are not so good as supervised method. However, MDS gives a great visulization result. 
